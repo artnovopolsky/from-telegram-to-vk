@@ -1,0 +1,2 @@
+telethon
+vk_api
