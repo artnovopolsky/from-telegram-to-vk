@@ -12,14 +12,14 @@ class VKBot:
     vk_session = vk_api.VkApi(token=config.VK_GROUP_TOKEN)
     vk = vk_session.get_api()
     upload = VkUpload(vk)
-    longpoll = VkBotLongPoll(vk_session, config.VK_GROUP_ID)
+    long_poll = VkBotLongPoll(vk_session, config.VK_GROUP_ID)
     db = Database('users.db')  # Инициализация соединения с БД
 
     def incoming_message_handler(self):
         """ Обработчик входящих сообщений бота. """
 
         # Слушаем события бота
-        for event in self.longpoll.listen():
+        for event in self.long_poll.listen():
 
             # Если пришло новое сообщение
             if event.type == VkBotEventType.MESSAGE_NEW:
@@ -71,8 +71,14 @@ class VKBot:
                         self.vk.messages.send(user_id=user_id, message=message, random_id=get_random_id())
 
     @staticmethod
+    def group(lst, n=50):
+        """ Группировка элементов списка по n элементов. """
+        return [lst[i:i+n] for i in range(0, len(lst), n)]
+
+    @staticmethod
     def upload_photo(upload, path):
         """ Загрузка фото на сервер VK. """
+
         response = upload.photo_messages(path)[0]
         owner_id = response['owner_id']
         photo_id = response['id']
@@ -80,10 +86,17 @@ class VKBot:
         return owner_id, photo_id, access_key
 
     @staticmethod
-    def send_message_with_photo(vk, message, user_id, owner_id, photo_id, access_key):
+    def send_message_with_photo(vk, message, user_ids, owner_id, photo_id, access_key):
         """ Отправление сообщения с фото в VK. """
+
         attachment = f'photo{owner_id}_{photo_id}_{access_key}'
-        vk.messages.send(user_id=user_id, message=message, attachment=attachment, random_id=get_random_id())
+        users = [str(user[0]) for user in user_ids]  # Делаем данные user_ids валидными для отправления запроса
+
+        # Разбиваем пользователей на группы, чтобы не превысить лимит запросов в секунду
+        user_groups = VKBot.group(users, 80)
+        for user_group in user_groups:
+            vk.messages.send(user_ids=','.join(user_group), message=message,
+                             attachment=attachment, random_id=get_random_id())
 
     @staticmethod
     def upload_document(upload, path, peer_id, filename):
@@ -94,11 +107,19 @@ class VKBot:
         return owner_id, doc_id
 
     @staticmethod
-    def send_message_with_document(vk, message, user_id, owner_id, doc_id):
+    def send_message_with_document(vk, message, user_ids, owner_id, doc_id):
         """ Отправление сообщения с документом в VK. """
+
         attachments = [f'doc{owner_id}_{doc_id}', ]
-        vk.messages.send(user_id=user_id, message=message, attachment=','.join(attachments), random_id=get_random_id())
+        users = [str(user[0]) for user in user_ids]  # Делаем данные user_ids валидными для отправления запроса
+
+        # Разбиваем пользователей на группы, чтобы не превысить лимит запросов в секунду
+        user_groups = VKBot.group(users, 80)
+        for user_group in user_groups:
+            vk.messages.send(user_ids=','.join(user_group), message=message, attachment=','.join(attachments),
+                             random_id=get_random_id())
 
 
 if __name__ == '__main__':
-    VKBot().incoming_message_handler()
+    bot = VKBot()
+    bot.incoming_message_handler()

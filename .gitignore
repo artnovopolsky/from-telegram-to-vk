@@ -130,6 +130,7 @@ dmypy.json
 
 *.session
 *.session-journal
+*.db
 media/
 
 # PyCharm
