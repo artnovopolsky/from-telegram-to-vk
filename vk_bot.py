@@ -76,48 +76,66 @@ class VKBot:
         return [lst[i:i+n] for i in range(0, len(lst), n)]
 
     @staticmethod
-    def upload_photo(upload, path):
+    def make_user_ids_valid(users):
+        """ Валидация users для отправления запроса (id должны быть строками) """
+        user_ids = [str(user[0]) for user in users]
+        return user_ids
+
+    def send_text_message(self, msg):
+        users = self.db.get_subscribers()  # Получаем список из кортежей с id
+        user_ids = self.make_user_ids_valid(users)
+
+        # Разбиваем пользователей на группы, чтобы не превысить лимит запросов в секунду
+        user_groups = self.group(user_ids, 80)
+        for user_group in user_groups:
+            self.vk.messages.send(user_ids=','.join(user_group), message=msg, random_id=get_random_id())
+
+    def upload_photo(self, path):
         """ Загрузка фото на сервер VK. """
 
-        response = upload.photo_messages(path)[0]
+        response = self.upload.photo_messages(path)[0]
         owner_id = response['owner_id']
         photo_id = response['id']
         access_key = response['access_key']
         return owner_id, photo_id, access_key
 
-    @staticmethod
-    def send_message_with_photo(vk, message, user_ids, owner_id, photo_id, access_key):
+    def send_message_with_photo(self, msg, file_path):
         """ Отправление сообщения с фото в VK. """
 
+        owner_id, photo_id, access_key = self.upload_photo(file_path)
         attachment = f'photo{owner_id}_{photo_id}_{access_key}'
-        users = [str(user[0]) for user in user_ids]  # Делаем данные user_ids валидными для отправления запроса
+
+        user_ids = self.db.get_subscribers()  # Получаем список из кортежей с id
+        users = self.make_user_ids_valid(user_ids)
 
         # Разбиваем пользователей на группы, чтобы не превысить лимит запросов в секунду
-        user_groups = VKBot.group(users, 80)
+        user_groups = self.group(users, 80)
         for user_group in user_groups:
-            vk.messages.send(user_ids=','.join(user_group), message=message,
-                             attachment=attachment, random_id=get_random_id())
+            self.vk.messages.send(user_ids=','.join(user_group), message=msg,
+                                  attachment=attachment, random_id=get_random_id())
 
-    @staticmethod
-    def upload_document(upload, path, peer_id, filename):
+    def upload_document(self, path, peer_id, file_name):
         """ Загрузка документа на сервер VK. """
-        response = upload.document_message(doc=path, peer_id=peer_id, title=filename)
+
+        response = self.upload.document_message(doc=path, peer_id=peer_id, title=file_name)
         owner_id = response['doc']['owner_id']
         doc_id = response['doc']['id']
         return owner_id, doc_id
 
-    @staticmethod
-    def send_message_with_document(vk, message, user_ids, owner_id, doc_id):
+    def send_message_with_document(self, message, file_path, file_name):
         """ Отправление сообщения с документом в VK. """
 
+        user_ids = self.db.get_subscribers()  # Получаем список из кортежей с id
+        users = VKBot.make_user_ids_valid(user_ids)
+
+        owner_id, doc_id = self.upload_document(file_path, user_ids[0], file_name)
         attachments = [f'doc{owner_id}_{doc_id}', ]
-        users = [str(user[0]) for user in user_ids]  # Делаем данные user_ids валидными для отправления запроса
 
         # Разбиваем пользователей на группы, чтобы не превысить лимит запросов в секунду
-        user_groups = VKBot.group(users, 80)
+        user_groups = self.group(users, 80)
         for user_group in user_groups:
-            vk.messages.send(user_ids=','.join(user_group), message=message, attachment=','.join(attachments),
-                             random_id=get_random_id())
+            self.vk.messages.send(user_ids=','.join(user_group), message=message, attachment=','.join(attachments),
+                                  random_id=get_random_id())
 
 
 if __name__ == '__main__':

@@ -1,71 +1,76 @@
-import config
+from datetime import datetime, timedelta
+from pyrogram import Client, filters
 
-from telethon import TelegramClient, events
-from vk_api.utils import get_random_id
+import config
 from vk_bot import VKBot
 
-client = TelegramClient('kispython', config.TG_API_ID, config.TG_API_HASH)  # Инициализация клиента TG
+
+tg_client = Client("kispython-translator", api_id=config.TG_API_ID, api_hash=config.TG_API_HASH)
 
 
-def make_message_header(author, time):
-    """ Создание заголовка сообщения. """
+def make_message_header(author, msg_time, edit=False):
+    """ Создание заголовка сообщения для VK. """
 
-    # TODO: правильное отображение даты (+3 часа)
     emoji = '🐍'
-    time = time.strftime("%H:%M:%S")
-    return f'{emoji} {author} ({time})\n\n'
+    msg_time = datetime.utcfromtimestamp(msg_time) + timedelta(hours=3)  # Для отображения Московского времени
+    msg_time = msg_time.strftime("%H:%M:%S")
+    if not edit:
+        return f'{emoji} {author} ({msg_time})\n\n'
+    else:
+        return f'{emoji} {author} (ред. {msg_time})\n\n'
 
 
-def get_message_for_vk(event):
-    """ Создание сообщения для """
-    author = event.message.post_author
-    time = event.message.date
-    message_text = event.message.message
-    message_header = make_message_header(author, time)
-    message = message_header + message_text
+def get_message_for_vk(message, edit=False, media=False):
+    """ Создание сообщения для VK. """
+
+    author = message.author_signature
+    message_text = message.text if not media else message.caption
+
+    if not edit:
+        msg_time = message.date
+        message_header = make_message_header(author, msg_time)
+    else:
+        msg_time = message.edit_date
+        message_header = make_message_header(author, msg_time, edit=True)
+
+    message = message_header + message_text if message_text is not None else message_header
+
     return message
 
 
-@client.on(events.NewMessage(chats=config.CHANNEL_NAME))
-async def new_message_handler(event):
-    """ Обработчик нового сообщения в канале. """
+@tg_client.on_message(filters.chat(chats=config.TG_CHAT_ID) & filters.text)
+def message_handler(client, message):
+    """ Обработчик текстовых сообщений в канале. """
 
-    message = get_message_for_vk(event)
+    if message.edit_date is not None:
+        msg = get_message_for_vk(message, edit=True)
+    else:
+        msg = get_message_for_vk(message)
+
+    vk_bot.send_text_message(msg)
+
+
+@tg_client.on_message(filters.chat(chats=config.TG_CHAT_ID) & (filters.photo | filters.document))
+def media_message_handler(client, message):
+    """ Обработчик сообщений с медиа в канале. """
+
+    if message.edit_date is not None:
+        msg = get_message_for_vk(message, edit=True, media=True)
+    else:
+        msg = get_message_for_vk(message, media=True)
 
     # Если сообщение содержит фото
-    if event.message.photo:
-        file_path = await event.message.download_media(config.get_unique_filename())
-        upload = VKBot.upload_photo(VKBot.upload, file_path)
-        users = VKBot.db.get_subscribers()
-        VKBot.send_message_with_photo(VKBot.vk, message, users, *upload)
+    if message.photo:
+        file_path = message.download()
+        vk_bot.send_message_with_photo(msg, file_path)
 
-    # Если фото содержит документ
-    elif event.message.document:
-        filename = event.message.document.attributes[0].file_name
-        file_path = await event.message.download_media(config.get_unique_filename())
-        users = VKBot.db.get_subscribers()
-
-        # Загружаем документ на сервер VK только для одного пользователя, а дальше отправляем его всем
-        attachments = VKBot.upload_document(VKBot.upload, file_path, users[0], filename)
-        VKBot.send_message_with_document(VKBot.vk, message, users, *attachments)
-
-    # Если сообщение содержит только текст
-    else:
-        users = VKBot.db.get_subscribers()  # Получаем список из кортежей с id
-
-        # Делаем данные users валидными для отправления запроса (id должны быть строками)
-        users_id = [str(user[0]) for user in users]
-
-        # Разбиваем пользователей на группы, чтобы не превысить лимит запросов в секунду
-        user_groups = VKBot.group(users_id, 80)
-        for user_group in user_groups:
-            VKBot.vk.messages.send(user_ids=','.join(user_group), message=message, random_id=get_random_id())
+    # Если сообщение содержит документ
+    elif message.document:
+        file_name = message.document.file_name
+        file_path = message.download()
+        vk_bot.send_message_with_document(msg, file_path, file_name)
 
 
-@client.on(events.MessageEdited(chats=config.CHANNEL_NAME))
-async def edited_message_handler(event):
-    """ Обработчик отредактированного сообщения в канале. """
-    pass
-
-with client:
-    client.run_until_disconnected()
+if __name__ == '__main__':
+    vk_bot = VKBot()
+    tg_client.run()
