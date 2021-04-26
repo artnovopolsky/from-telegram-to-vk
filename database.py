@@ -3,7 +3,7 @@ import sqlite3
 
 class Database:
 
-    def __init__(self, database='users'):
+    def __init__(self, database='users.db'):
         """ Инициализация и подключение к БД. """
 
         self.database = database
