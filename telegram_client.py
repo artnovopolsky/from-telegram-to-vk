@@ -17,7 +17,7 @@ def make_message_header(author, msg_time, edit=False):
     if not edit:
         return f'{emoji} {author} ({msg_time})\n\n'
     else:
-        return f'{emoji} {author} (ред. {msg_time})\n\n'
+        return f'{emoji} {author} (изменено в {msg_time})\n\n'
 
 
 def get_message_for_vk(message, edit=False, media=False):

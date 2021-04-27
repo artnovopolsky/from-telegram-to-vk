@@ -1,3 +1,5 @@
+import time
+
 import vk_api
 from vk_api.upload import VkUpload
 from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
@@ -70,18 +72,34 @@ class VKBot:
                                   '"Отписка" для отмены подписки.'
                         self.vk.messages.send(user_id=user_id, message=message, random_id=get_random_id())
 
-    @staticmethod
-    def group(lst, n=50):
-        """ Группировка элементов списка по n элементов. """
-        return [lst[i:i+n] for i in range(0, len(lst), n)]
+    def check_permission_to_send_messages(self, users):
+        """
+        Проверка на то, разрешил ли пользователь писать ему сообщения.
+        Если нет разрешения, но есть подписка, просто исключаем юзера из рассылки.
+
+        Таким образом, когда пользователь снова разрешит сообщения, он будет их получать.
+        """
+        for user in users:
+            permission = self.vk.messages.is_messages_from_group_allowed(group_id=config.VK_GROUP_ID, user_id=user)
+            if permission['is_allowed'] == 0:
+                users.remove(user)
+            time.sleep(0.3)  # Спим для того, чтобы точно не превысить лимит запросов в VK :)
+        return users
+
+    def group(self, users, n=50):
+        """ Группировка списка юзеров по n человек для эффективной рассылки. """
+        res_users = self.check_permission_to_send_messages(users)
+        return [res_users[i:i+n] for i in range(0, len(res_users), n)]
 
     @staticmethod
     def make_user_ids_valid(users):
-        """ Валидация users для отправления запроса (id должны быть строками) """
+        """ Валидация users для отправления запроса (id должны быть строками). """
         user_ids = [str(user[0]) for user in users]
         return user_ids
 
     def send_text_message(self, msg):
+        """ Отправление текстового сообщения в VK. """
+
         users = self.db.get_subscribers()  # Получаем список из кортежей с id
         user_ids = self.make_user_ids_valid(users)
 
@@ -89,6 +107,7 @@ class VKBot:
         user_groups = self.group(user_ids, 80)
         for user_group in user_groups:
             self.vk.messages.send(user_ids=','.join(user_group), message=msg, random_id=get_random_id())
+            time.sleep(0.5)  # Спим для того, чтобы точно не превысить лимит запросов в VK :)
 
     def upload_photo(self, path):
         """ Загрузка фото на сервер VK. """
@@ -113,6 +132,7 @@ class VKBot:
         for user_group in user_groups:
             self.vk.messages.send(user_ids=','.join(user_group), message=msg,
                                   attachment=attachment, random_id=get_random_id())
+            time.sleep(0.5)  # Спим для того, чтобы точно не превысить лимит запросов в VK :)
 
     def upload_document(self, path, peer_id, file_name):
         """ Загрузка документа на сервер VK. """
@@ -136,6 +156,7 @@ class VKBot:
         for user_group in user_groups:
             self.vk.messages.send(user_ids=','.join(user_group), message=message, attachment=','.join(attachments),
                                   random_id=get_random_id())
+            time.sleep(0.5)  # Спим для того, чтобы точно не превысить лимит запросов в VK :)
 
 
 if __name__ == '__main__':
